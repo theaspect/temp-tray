@@ -3,3 +3,5 @@ TempTray.exe
 build.log
 # Per-machine choices
 settings.txt
+# Output of diagnose.ps1
+diagnose-*.txt

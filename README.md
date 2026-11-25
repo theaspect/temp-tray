@@ -97,3 +97,12 @@ hide:fan:02#1
 
 The Dell readings are what the BIOS reports for the whole CPU, not per core. Per-core temperatures need ring-0 access to
 the CPU's thermal MSRs, which means a kernel driver; this app deliberately does without one.
+
+## Which sources does my machine have?
+
+Run `diagnose.ps1` (right-click → Run with PowerShell). It asks for admin rights, checks every source above plus the ACPI
+thermal zones and Dell's WMI namespaces, read-only, and writes `diagnose-<computer>.txt` next to itself.
+
+An ACPI thermal zone that reads a constant 25.1 °C or 27.8 °C is a placeholder the BIOS fills in, not a sensor.
+For example, a Dell G3 3590 (2019) has no Dell data vault interface and only such a placeholder, so there TempTray shows
+CPU load, RAM and the NVIDIA GPU.
