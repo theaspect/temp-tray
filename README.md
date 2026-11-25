@@ -1,7 +1,7 @@
 # TempTray
 
-Tray icons with live history graphs, in the style of Process Explorer's: CPU load, RAM use, and the temperatures and fan
-speeds a Dell laptop's BIOS reports. One small exe, no installer, no driver, no dependencies.
+Tray icons with live history graphs, in the style of Process Explorer's: CPU load, RAM use, the NVIDIA GPU temperature,
+and the temperatures and fan speeds a Dell laptop's BIOS reports. One small exe, no installer, no driver, no dependencies.
 
 ![RAM, CPU temperature and CPU load icons with the small number over the graph, shown 3x](docs/tray-icons.png)
 
@@ -13,7 +13,8 @@ Tested on a Dell XPS 15 9510 with Windows 11.
 
 - Windows 10 or 11 with .NET Framework 4.8, which Windows includes.
 - A Dell laptop whose BIOS exposes the Dell "data vault" WMI interface (`DDVWmiMethodFunction` in `root\wmi`). On other
-  machines, CPU load and RAM still work and the menu says the Dell sensors are unavailable.
+  machines, CPU load, RAM and the NVIDIA GPU still work and the menu says the Dell sensors are unavailable.
+- For the NVIDIA GPU temperature: an NVIDIA GPU with its driver installed.
 - Admin rights: the Dell interface answers only administrators, so the exe asks for them at start.
 
 ## Build
@@ -76,7 +77,7 @@ hide:fan:02#1
 | Line | Meaning |
 |---|---|
 | `mode=` | `Graph`, `GraphWithNumber` or `Number` |
-| `hide:<key>` | One hidden item. Keys: `cpu-load`, `ram`, `battery`, `temp:<type>#<n>`, `fan:<type>#<n>` |
+| `hide:<key>` | One hidden item. Keys: `cpu-load`, `ram`, `nvidia:<n>`, `battery`, `temp:<type>#<n>`, `fan:<type>#<n>` |
 
 `<type>` is the BIOS sensor type in hex and `<n>` numbers sensors of the same type in BIOS order.
 
@@ -85,6 +86,8 @@ hide:fan:02#1
 - **CPU load:** `GetSystemTimes`, as the busy share of time since the previous reading, every 2 seconds. Windows
   performance counters were avoided: their names are localized, so a query by name breaks on non-English Windows.
 - **RAM:** `GlobalMemoryStatusEx`.
+- **NVIDIA GPU:** NVIDIA's NVML library (`nvml.dll`), which the NVIDIA driver installs. A laptop's NVIDIA GPU powers off
+  when idle and a query can wake it, costing battery, so a hidden GPU is read only when the menu opens, not every 2 seconds.
 - **Temperatures and fans:** the Dell BIOS, through Windows' built-in ACPI WMI driver. All calls are read-only.
   - `ThermalSensorInformation` returns 5-byte entries (type, current °C, min, max, unknown), ended by `0xFF`.
   - `FanSensorInformation` returns 3-byte entries (type, rpm little-endian), ended by `0xFF`.

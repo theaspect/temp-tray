@@ -181,6 +181,66 @@ class DellSensors
     }
 }
 
+// GPU temperatures from NVIDIA's NVML library, which every NVIDIA driver installs; nothing extra to install.
+class NvidiaGpus
+{
+    const int TemperatureGpu = 0;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr LoadLibrary(string path);
+
+    [DllImport("nvml.dll")]
+    static extern int nvmlInit_v2();
+
+    [DllImport("nvml.dll")]
+    static extern int nvmlShutdown();
+
+    [DllImport("nvml.dll")]
+    static extern int nvmlDeviceGetCount_v2(out uint count);
+
+    [DllImport("nvml.dll")]
+    static extern int nvmlDeviceGetHandleByIndex_v2(uint index, out IntPtr device);
+
+    [DllImport("nvml.dll")]
+    static extern int nvmlDeviceGetTemperature(IntPtr device, int sensor, out uint celsius);
+
+    readonly IntPtr[] _devices;
+
+    NvidiaGpus(IntPtr[] devices) { _devices = devices; }
+
+    public int Count { get { return _devices.Length; } }
+
+    // Null when there is no NVIDIA driver or GPU.
+    public static NvidiaGpus Open()
+    {
+        // Current drivers put nvml.dll in System32, older ones in NVSMI; once loaded, the DllImports bind to it by name.
+        string legacy = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"NVIDIA Corporation\NVSMI\nvml.dll");
+        if (LoadLibrary("nvml.dll") == IntPtr.Zero && LoadLibrary(legacy) == IntPtr.Zero)
+            return null;
+        uint count;
+        if (nvmlInit_v2() != 0 || nvmlDeviceGetCount_v2(out count) != 0 || count == 0)
+            return null;
+        var devices = new IntPtr[count];
+        for (uint i = 0; i < count; i++)
+            nvmlDeviceGetHandleByIndex_v2(i, out devices[i]);
+        return new NvidiaGpus(devices);
+    }
+
+    public static string Key(int index) { return "nvidia:" + index; }
+
+    // Null when the driver can't answer right now.
+    public Reading Read(int index)
+    {
+        uint celsius;
+        if (nvmlDeviceGetTemperature(_devices[index], TemperatureGpu, out celsius) != 0)
+            return null;
+        string name = index == 0 ? "NVIDIA GPU" : "NVIDIA GPU " + (index + 1);
+        return new Reading { Key = Key(index), Name = name, Kind = Kind.Temperature, Value = celsius };
+    }
+
+    public void Close() { nvmlShutdown(); }
+}
+
 class TrayApp : ApplicationContext
 {
     const int HistoryLength = 60;
@@ -197,6 +257,7 @@ class TrayApp : ApplicationContext
 
     readonly SystemUsage _usage = new SystemUsage();
     readonly DellSensors _dell;
+    readonly NvidiaGpus _nvidia = NvidiaGpus.Open();
     readonly Timer _timer = new Timer { Interval = 2000 };
     readonly Dictionary<string, Queue<Reading>> _history = new Dictionary<string, Queue<Reading>>();
     readonly Dictionary<string, NotifyIcon> _icons = new Dictionary<string, NotifyIcon>();
@@ -221,7 +282,11 @@ class TrayApp : ApplicationContext
         {
             _dellError = "Dell sensors unavailable: " + e.Message;
         }
-        _menu.Opening += (s, e) => BuildMenu();
+        _menu.Opening += (s, e) =>
+        {
+            AddHiddenGpuReadings();
+            BuildMenu();
+        };
         // Ticking a sensor keeps the menu open, so several can be chosen in one go.
         _menu.Closing += (s, e) =>
         {
@@ -248,6 +313,13 @@ class TrayApp : ApplicationContext
                 _dellError = e.Message;
             }
         }
+        // A laptop's NVIDIA GPU powers off when idle, and an NVML query can wake it, so only shown GPUs are polled.
+        for (int i = 0; _nvidia != null && i < _nvidia.Count; i++)
+        {
+            Reading gpu = IsShown(NvidiaGpus.Key(i)) ? _nvidia.Read(i) : null;
+            if (gpu != null)
+                readings.Add(gpu);
+        }
         _last = readings;
 
         foreach (Reading r in _last)
@@ -261,6 +333,33 @@ class TrayApp : ApplicationContext
         }
 
         SyncIcons();
+    }
+
+    // Hidden GPUs aren't polled, so the menu reads them once on opening; otherwise they'd be missing and couldn't be ticked.
+    void AddHiddenGpuReadings()
+    {
+        for (int i = 0; _nvidia != null && i < _nvidia.Count; i++)
+        {
+            string key = NvidiaGpus.Key(i);
+            if (IsShown(key))
+                continue;
+            Reading gpu = _nvidia.Read(i);
+            if (gpu == null)
+                continue;
+            _last.RemoveAll(r => r.Key == key);
+            _last.Add(gpu);
+        }
+    }
+
+    // An item ticked in the menu gets an icon before the next poll, so its history may not exist yet: it starts with r.
+    Queue<Reading> History(Reading r)
+    {
+        Queue<Reading> h;
+        if (!_history.TryGetValue(r.Key, out h))
+            _history[r.Key] = h = new Queue<Reading>();
+        if (h.Count == 0)
+            h.Enqueue(r);
+        return h;
     }
 
     bool IsShown(string key) { return !_settings.Hidden.Contains(key); }
@@ -286,7 +385,7 @@ class TrayApp : ApplicationContext
 
     string Tooltip(Reading r)
     {
-        Queue<Reading> h = _history[r.Key];
+        Queue<Reading> h = History(r);
         int minutes = (int)Math.Ceiling(h.Count * _timer.Interval / 60000.0);
         string text = string.Format("{0}: {1}", r.Name, Format(r, r.Value));
         if (r.Detail != null)
@@ -418,7 +517,7 @@ class TrayApp : ApplicationContext
     {
         int w = size.Width, h = size.Height;
         g.Clear(Color.FromArgb(250, 250, 250));
-        Reading[] samples = _history[current.Key].ToArray();
+        Reading[] samples = History(current).ToArray();
         int inner = h - 2;
         int columns = w - 2;
         for (int c = 0; c < columns; c++)
@@ -615,6 +714,8 @@ class TrayApp : ApplicationContext
     void Exit()
     {
         _timer.Stop();
+        if (_nvidia != null)
+            _nvidia.Close();
         foreach (string key in _icons.Keys.ToList())
             RemoveIcon(key);
         ExitThread();
