@@ -3,6 +3,10 @@
 Tray icons with live history graphs, in the style of Process Explorer's: CPU load, RAM use, and the temperatures and fan
 speeds a Dell laptop's BIOS reports. One small exe, no installer, no driver, no dependencies.
 
+![RAM, CPU temperature and CPU load icons with the small number over the graph, shown 3x](docs/tray-icons.png)
+
+<img src="docs/menu.png" alt="Right-click menu: a checkbox per item with its current value, then the display options" width="372">
+
 Tested on a Dell XPS 15 9510 with Windows 11.
 
 ## Requirements
