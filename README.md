@@ -50,7 +50,7 @@ icon for the menu:
 | Item checkboxes | Show or hide that item's icon. The menu stays open, so several can be toggled at once. The last visible icon can't be hidden, since the menu lives on the icons. |
 | Draw a small number over the graph | Adds the value in a 3×5 pixel font: `87°`, `34%`, or `5.4` for a fan (thousands of rpm). |
 | Show only the number, no graph | A big number on a colored background instead of the graph. |
-| Start at logon (as admin, via Task Scheduler) | Creates or deletes the `TempTray` scheduled task that starts the app at logon with highest privileges, so there is no UAC prompt each time. It passes on `--config` if the app was started with it. |
+| Start at logon (as admin, via Task Scheduler) | Creates or deletes the `TempTray` scheduled task that starts the app at logon with highest privileges, so there is no UAC prompt each time. It passes on `--config` if the app was started with it. The task starts on battery, keeps running when unplugged, and has no time limit. |
 | Exit | Closes the app. |
 
 Graph colors:

@@ -560,16 +560,47 @@ class TrayApp : ApplicationContext
 
     static void SetLogonTask(bool enable, string configArg)
     {
-        // schtasks takes the whole command line in /TR, so inner quotes are escaped as \".
-        string run = "\\\"" + Application.ExecutablePath + "\\\"";
-        if (configArg != null)
-            run += " --config \\\"" + configArg + "\\\"";
-        string args = enable
-            ? "/Create /F /TN " + TaskName + " /SC ONLOGON /RL HIGHEST /TR \"" + run + "\""
-            : "/Delete /F /TN " + TaskName;
-        if (Schtasks(args) != 0)
-            MessageBox.Show("Task Scheduler refused: schtasks " + args, "TempTray");
+        if (!enable)
+        {
+            if (Schtasks("/Delete /F /TN " + TaskName) != 0)
+                MessageBox.Show("Task Scheduler refused to delete the " + TaskName + " task.", "TempTray");
+            return;
+        }
+
+        // The task comes from XML because schtasks' /SC ONLOGON flags leave Windows' defaults on, and those suit no tray app
+        // on a laptop: no start on battery, a stop when unplugged, and a kill after 3 days.
+        string xml = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "TempTray-task.xml");
+        File.WriteAllText(xml, LogonTaskXml(configArg), System.Text.Encoding.Unicode);
+        try
+        {
+            if (Schtasks("/Create /F /TN " + TaskName + " /XML \"" + xml + "\"") != 0)
+                MessageBox.Show("Task Scheduler refused to create the " + TaskName + " task.", "TempTray");
+        }
+        finally
+        {
+            File.Delete(xml);
+        }
     }
+
+    static string LogonTaskXml(string configArg)
+    {
+        string user = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
+        string exe = Application.ExecutablePath;
+        string arguments = configArg == null ? "" : "<Arguments>--config \"" + Escape(configArg) + "\"</Arguments>";
+        return "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
+            + "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">"
+            + "<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + Escape(user) + "</UserId></LogonTrigger></Triggers>"
+            + "<Principals><Principal id=\"Author\"><UserId>" + Escape(user) + "</UserId>"
+            + "<LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>"
+            + "<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"
+            + "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"
+            + "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings>"
+            + "<Actions Context=\"Author\"><Exec><Command>\"" + Escape(exe) + "\"</Command>" + arguments
+            + "<WorkingDirectory>" + Escape(System.IO.Path.GetDirectoryName(exe)) + "</WorkingDirectory></Exec></Actions>"
+            + "</Task>";
+    }
+
+    static string Escape(string s) { return System.Security.SecurityElement.Escape(s); }
 
     static int Schtasks(string args)
     {
